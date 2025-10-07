@@ -51,6 +51,11 @@
   :type 'boolean
   :group 'ivy-xref)
 
+(defcustom ivy-xref-open-other-window-key "C-<return>"
+  "If not nil, this key will open the selected item in other window."
+  :type 'string
+  :group 'ivy-xref)
+
 (defun ivy-xref-make-collection (xrefs)
   "Transform XREFS into a collection for display via `ivy-read'."
   (let ((collection nil))
@@ -89,26 +94,37 @@
                     ;; Emacs 27
                     (or (assoc-default 'fetched-xrefs alist)
                         (funcall fetcher))
-                    fetcher))
+                  fetcher))
          (buffer (xref--show-xref-buffer fetcher alist)))
     (quit-window)
     (let ((orig-buf (current-buffer))
           (orig-pos (point))
+          (keymap (if ivy-xref-open-other-window-key
+                      (let ((m (make-sparse-keymap)))
+                        (keymap-set m ivy-xref-open-other-window-key 'ivy-done)
+                        m)))
           done)
       (ivy-read "xref: " (ivy-xref-make-collection xrefs)
                 :require-match t
+                :keymap keymap
                 :action (lambda (candidate)
                           (setq done (eq 'ivy-done this-command))
                           (condition-case err
                               (let* ((marker (xref-location-marker (cdr candidate)))
                                      (buf (marker-buffer marker)))
                                 (with-current-buffer buffer
-                                  (select-window
-                                   ;; function signature changed in
-                                   ;; 2a973edeacefcabb9fd8024188b7e167f0f9a9b6
-                                   (if (version< emacs-version "26.0.90")
-                                       (xref--show-pos-in-buf marker buf t)
-                                     (xref--show-pos-in-buf marker buf)))))
+                                  (let ((xref--original-window-intent
+                                         (if (and ivy-xref-open-other-window-key
+                                                  (equal (this-single-command-raw-keys)
+                                                         (key-parse ivy-xref-open-other-window-key)))
+                                             'window
+                                           xref--original-window-intent)))
+                                    (select-window
+                                     ;; function signature changed in
+                                     ;; 2a973edeacefcabb9fd8024188b7e167f0f9a9b6
+                                     (if (version< emacs-version "26.0.90")
+                                         (xref--show-pos-in-buf marker buf t)
+                                       (xref--show-pos-in-buf marker buf))))))
                             (user-error (message (error-message-string err)))))
                 :unwind (lambda ()
                           (unless done
